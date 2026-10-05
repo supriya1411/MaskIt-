@@ -1,0 +1,6 @@
+{
+  "name": "MaskIt — AI-Powered Browser Fingerprint Privacy Shield",
+  "description": "Real-time browser fingerprint protection, privacy-safe telemetry, deterministic risk engine, masking policies, and live analytics dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -50,7 +50,20 @@ export const LoginPage: React.FC = () => {
 
       <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white dark:bg-slate-900 rounded-xl p-8 shadow-sm border border-slate-200 dark:border-slate-800 space-y-5">
-          {error && <ErrorBanner message={error} onRetry={clearError} />}
+          {error && (
+            <div className="space-y-2">
+              <ErrorBanner message={error} onRetry={clearError} />
+              {error.toLowerCase().includes('incorrect') && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 p-2.5 rounded-lg border border-amber-200 dark:border-amber-900">
+                  💡 <strong>Nayi Email ID hai?</strong> Pehle{' '}
+                  <Link to="/register" className="font-bold underline text-blue-600 dark:text-blue-400">
+                    Register Page (/register)
+                  </Link>{' '}
+                  par account banayein, phir login karein!
+                </p>
+              )}
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>

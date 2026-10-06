@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MaskIt Privacy Shield</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+    }
+    body {
+      width: 320px;
+      background-color: #0f172a;
+      color: #f8fafc;
+      padding: 14px;
+      font-size: 13px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #1e293b;
+      padding-bottom: 10px;
+      margin-bottom: 12px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: 0.2px;
+    }
+    .brand-icon {
+      width: 22px;
+      height: 22px;
+      background: linear-gradient(135deg, #10b981, #06b6d4);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+    }
+    .status-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 999px;
+      text-transform: uppercase;
+    }
+    .status-protected {
+      background: #064e3b;
+      color: #34d399;
+      border: 1px solid #059669;
+    }
+    .status-unprotected {
+      background: #4c0519;
+      color: #fb7185;
+      border: 1px solid #e11d48;
+    }
+    .domain-card {
+      background: #1e293b;
+      border-radius: 10px;
+      padding: 12px;
+      border: 1px solid #334155;
+      margin-bottom: 12px;
+    }
+    .domain-title {
+      font-size: 11px;
+      color: #94a3b8;
+      margin-bottom: 3px;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .domain-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: #e2e8f0;
+      word-break: break-all;
+    }
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #334155;
+    }
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 38px;
+      height: 22px;
+    }
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #475569;
+      transition: .25s;
+      border-radius: 24px;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .25s;
+      border-radius: 50%;
+    }
+    input:checked + .slider {
+      background-color: #10b981;
+    }
+    input:checked + .slider:before {
+      transform: translateX(16px);
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .stat-card {
+      background: #1e293b;
+      padding: 9px;
+      border-radius: 8px;
+      border: 1px solid #334155;
+    }
+    .stat-val {
+      font-size: 15px;
+      font-weight: 700;
+      color: #38bdf8;
+    }
+    .stat-lbl {
+      font-size: 10px;
+      color: #94a3b8;
+    }
+    .btn-action {
+      width: 100%;
+      background: #2563eb;
+      color: white;
+      border: none;
+      padding: 9px 12px;
+      border-radius: 7px;
+      font-weight: 600;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background 0.2s;
+    }
+    .btn-action:hover {
+      background: #1d4ed8;
+    }
+    .footer-note {
+      font-size: 10px;
+      color: #64748b;
+      text-align: center;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">
+      <div class="brand-icon">🛡️</div>
+      <span>MaskIt Shield</span>
+    </div>
+    <span id="badge" class="status-badge status-unprotected">OFF</span>
+  </div>
+
+  <div class="domain-card">
+    <div class="domain-title">Current Website</div>
+    <div class="domain-name" id="currentDomain">Loading...</div>
+    <div class="toggle-row">
+      <span>Protect this site</span>
+      <label class="switch">
+        <input type="checkbox" id="siteToggle" />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="toggle-row" style="border-top: none; padding-top: 6px;">
+      <span>Global Shield (All Sites)</span>
+      <label class="switch">
+        <input type="checkbox" id="globalToggle" />
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-val" id="protectedCount">0</div>
+      <div class="stat-lbl">Custom Protected Sites</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" id="maskedSignals">5 Signals</div>
+      <div class="stat-lbl">Canvas • GPU • Screen • CPU</div>
+    </div>
+  </div>
+
+  <button class="btn-action" id="openScannerBtn">
+    🔍 Open Full MaskIt Scanner (Web App)
+  </button>
+
+  <div class="footer-note">
+    Fingerprint Spoofing Active &bullet; MaskIt v1.0
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

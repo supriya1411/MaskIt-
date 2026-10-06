@@ -3,11 +3,17 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 // ==========================================
 // API BASE URL CONFIGURATION
 // ==========================================
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
-export const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/dashboard';
+// In development, default to relative paths so requests flow through the Vite proxy.
+// In production, set VITE_API_BASE_URL / VITE_WS_URL to the actual backend origin.
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+export const WS_BASE_URL = import.meta.env.VITE_WS_URL ||
+  `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/dashboard`;
 
 // Health endpoint base (root of backend)
-export const BACKEND_ROOT_URL = API_BASE_URL.replace(/\/api\/v1\/?$/, '');
+// When using relative API path, health is at the same origin
+export const BACKEND_ROOT_URL = API_BASE_URL.startsWith('/')
+  ? ''
+  : API_BASE_URL.replace(/\/api\/v1\/?$/, '');
 
 // ==========================================
 // DATA MODELS & INTERFACES

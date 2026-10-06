@@ -441,4 +441,15 @@ export const api = {
     const { data } = await apiClient.get<TelemetryEventResponse[]>('/events', { params: { limit } });
     return data;
   },
+
+  logEvent: async (payload: {
+    event_type: string;
+    domain: string;
+    signal_type?: string;
+    action?: string;
+    risk_score?: number;
+  }): Promise<any> => {
+    const { data } = await apiClient.post('/events', payload);
+    return data;
+  },
 };

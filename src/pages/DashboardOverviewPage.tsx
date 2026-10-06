@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ShieldCheck,
@@ -9,6 +9,7 @@ import {
   Shield,
   Radio,
   CheckCircle2,
+  RefreshCw,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -32,60 +33,34 @@ export const DashboardOverviewPage: React.FC = () => {
   const navigate = useNavigate();
 
   const [recentEvents, setRecentEvents] = useState<TelemetryEventResponse[]>([]);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const loadDashboardData = useCallback(async (showSpinner = false) => {
+    if (showSpinner) setIsRefreshing(true);
+    try {
+      await fetchAll();
+      const data = await api.getEvents(6);
+      setRecentEvents(data);
+    } catch {
+      // backend unreachable — keep existing data
+    } finally {
+      setLastUpdated(new Date());
+      if (showSpinner) setIsRefreshing(false);
+    }
+  }, [fetchAll]);
 
   useEffect(() => {
-    fetchAll();
-    api.getEvents(6)
-      .then((data) => setRecentEvents(data))
-      .catch(() => {
-        // Fallback default activity
-        setRecentEvents([
-          {
-            id: 'ev-1',
-            domain: 'youtube.com',
-            event_type: 'PROBE_MASKED',
-            signal_type: 'Canvas 2D',
-            action: 'MASKED',
-            risk_score: 28,
-            risk_before: 76,
-            risk_after: 28,
-            consistency_score: 98,
-            source: 'WEB_EXTENSION',
-            timestamp: new Date(Date.now() - 1000 * 60 * 3).toISOString(),
-          },
-          {
-            id: 'ev-2',
-            domain: 'tiktok.com',
-            event_type: 'PROBE_MASKED',
-            signal_type: 'WebGL Renderer',
-            action: 'MASKED',
-            risk_score: 24,
-            risk_before: 82,
-            risk_after: 24,
-            consistency_score: 96,
-            source: 'WEB_EXTENSION',
-            timestamp: new Date(Date.now() - 1000 * 60 * 12).toISOString(),
-          },
-          {
-            id: 'ev-3',
-            domain: 'reddit.com',
-            event_type: 'PROBE_MASKED',
-            signal_type: 'AudioContext DSP',
-            action: 'MASKED',
-            risk_score: 30,
-            risk_before: 74,
-            risk_after: 30,
-            consistency_score: 99,
-            source: 'WEB_EXTENSION',
-            timestamp: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
-          },
-        ]);
-      });
-  }, []);
+    loadDashboardData();
+    // Auto-refresh every 30 seconds
+    const interval = setInterval(() => loadDashboardData(), 30_000);
+    return () => clearInterval(interval);
+  }, [loadDashboardData]);
 
-  const riskBefore = overview?.average_risk_before ?? 78;
-  const riskAfter = overview?.average_risk_after ?? 24;
-  const protectionRate = overview?.protection_rate ?? 98;
+  // Real data from backend — no hardcoded fallbacks
+  const riskBefore = overview?.average_risk_before ?? 0;
+  const riskAfter = overview?.average_risk_after ?? 0;
+  const protectionRate = overview?.protection_rate ?? 0;
   const totalProtectedSites = overview?.protected_sites ?? sites.length;
   const activeProtectedSites = overview?.active_sites ?? sites.filter((s) => s.enabled).length;
   const signalsMasked = overview?.signals_masked ?? 0;
@@ -113,10 +88,26 @@ export const DashboardOverviewPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-slate-900 dark:text-white">Security Overview</h2>
-          <p className="text-xs text-slate-500">Live browser fingerprint telemetry and masking status</p>
+          <p className="text-xs text-slate-500">
+            Live browser fingerprint telemetry
+            {lastUpdated && (
+              <span className="ml-2 text-slate-400">
+                · Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </span>
+            )}
+          </p>
         </div>
 
         <div className="flex items-center space-x-2.5">
+          <button
+            onClick={() => loadDashboardData(true)}
+            disabled={isRefreshing}
+            className="px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 text-xs font-medium rounded-lg transition-colors flex items-center space-x-1.5 disabled:opacity-60"
+            title="Refresh data"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
           <button
             onClick={() => navigate('/scan')}
             className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-750 text-xs font-medium rounded-lg transition-colors flex items-center space-x-1.5"

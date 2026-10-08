@@ -1,20 +1,46 @@
-# MaskIt — AI Browser Fingerprint Privacy Shield (Frontend)
+# MaskIt — AI Browser Fingerprint Privacy Shield
 
-MaskIt is a defense-grade browser fingerprint privacy protection system. This frontend is built with React 19, TypeScript, Tailwind CSS, Framer Motion, Recharts, and Zustand, communicating with the existing FastAPI + PostgreSQL + Redis backend.
+MaskIt is an end-to-end browser fingerprint privacy shield and virtualization system. It combines a real-time **React 19 Dashboard**, a high-performance **FastAPI Backend**, deterministic **Risk & Policy Engine**, real-time **WebSocket streaming**, and a **Chrome Extension (Manifest V3)** with client-side canvas/WebGL/audio noise injection.
 
 ---
 
-## 1. Frontend Setup
+## ⚡ Quick Start: Running the Full Stack
 
+You can run both frontend and backend concurrently or individually:
+
+### Option A: Run Both Together (Recommended)
 ```bash
-# Install dependencies
+# 1. Install frontend dependencies
 npm install
 
-# Start development server
-npm run dev
+# 2. Setup backend virtualenv & dependencies
+cd backend
+python -m venv .venv
+# On Windows: .venv\Scripts\activate
+# On Linux/macOS: source .venv/bin/activate
+pip install -r requirements.txt
+python seed_demo_data.py
+cd ..
 
-# Compile production build
-npm run build
+# 3. Start both services concurrently
+npm run dev
+```
+- **Frontend Dashboard**: [http://localhost:3000](http://localhost:3000)
+- **Backend API**: [http://localhost:8000](http://localhost:8000)
+- **Interactive API Docs (Swagger)**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Health Check**: [http://localhost:8000/health](http://localhost:8000/health)
+
+### Option B: Run Individually
+
+**Backend (`backend/`):**
+```bash
+cd backend
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+**Frontend (root):**
+```bash
+npm run dev:frontend
 ```
 
 ---
@@ -24,11 +50,14 @@ npm run build
 Configure the environment variables in `.env` (or see `.env.example`):
 
 ```ini
-# Backend FastAPI REST URL
+# Backend REST URL
 VITE_API_BASE_URL="http://localhost:8000/api/v1"
 
-# Backend Real-Time WebSocket Endpoint
+# Backend WebSocket URL
 VITE_WS_URL="ws://localhost:8000/ws/dashboard"
+
+# Backend Origin
+VITE_BACKEND_URL="http://localhost:8000"
 ```
 
 ---

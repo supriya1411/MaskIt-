@@ -1,3 +1,37 @@
+def test_dashboard_signals_match_seed_aliases(client, auth_headers):
+    client.post("/api/v1/events", json={
+        "domain": "youtube.com",
+        "event_type": "MASK_APPLIED",
+        "signal_type": "Canvas 2D Hash",
+        "action": "MASKED",
+        "risk_before": 70.0,
+        "risk_after": 20.0
+    }, headers=auth_headers)
+    res = client.get("/api/v1/dashboard/signals", headers=auth_headers)
+    assert res.status_code == 200
+    canvas = next(s for s in res.json() if s["signal"] == "CANVAS")
+    assert canvas["count"] >= 1
+    assert canvas["masked_count"] >= 1
+
+
+def test_dashboard_overview_includes_unassigned_telemetry(client, auth_headers):
+    client.post("/api/v1/events", json={
+        "domain": "ads.example.com",
+        "event_type": "FINGERPRINT_PROBE",
+        "signal_type": "WEBGL",
+        "action": "MASKED",
+        "risk_before": 80.0,
+        "risk_after": 18.0
+    })
+    res = client.get("/api/v1/dashboard/overview", headers=auth_headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["fingerprint_probes"] >= 1
+    assert data["signals_masked"] >= 1
+    assert data["average_risk_before"] > 0
+    assert data["average_risk_after"] > 0
+
+
 def test_dashboard_overview_calculations(client, auth_headers):
     # 1. Check baseline
     base_res = client.get("/api/v1/dashboard/overview", headers=auth_headers)

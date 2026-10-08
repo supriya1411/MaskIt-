@@ -1,5 +1,5 @@
 import uuid
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, select
@@ -11,6 +11,8 @@ from app.models.masking_event import MaskingEvent
 from app.models.analytics_event import AnalyticsEvent
 from app.schemas.protection import ProtectionSummary, SiteAnalytics
 from app.utils.validators import sanitize_and_validate_domain
+from app.utils.query_scope import apply_user_scope
+from app.services.risk_engine import RiskEngine
 
 class ProtectionService:
     @staticmethod
@@ -111,23 +113,33 @@ class ProtectionService:
         total_sites = db.query(func.count(ProtectedSite.id)).filter(ProtectedSite.user_id == user_id).scalar() or 0
         active_sites = db.query(func.count(ProtectedSite.id)).filter(ProtectedSite.user_id == user_id, ProtectedSite.enabled == True).scalar() or 0
         
-        # Events calculations from PostgreSQL
-        total_events = db.query(func.count(AnalyticsEvent.id)).filter(AnalyticsEvent.user_id == user_id).scalar() or 0
-        signals_protected = db.query(func.count(MaskingEvent.id)).filter(MaskingEvent.user_id == user_id).scalar() or 0
-        high_risk_probes = db.query(func.count(FingerprintEvent.id)).filter(
-            FingerprintEvent.user_id == user_id,
-            FingerprintEvent.risk_score >= 70.0
+        total_events = apply_user_scope(
+            db.query(func.count(AnalyticsEvent.id)), AnalyticsEvent.user_id, user_id
+        ).scalar() or 0
+        signals_protected = apply_user_scope(
+            db.query(func.count(MaskingEvent.id)), MaskingEvent.user_id, user_id
+        ).scalar() or 0
+        high_risk_probes = apply_user_scope(
+            db.query(func.count(FingerprintEvent.id)).filter(FingerprintEvent.risk_score >= 70.0),
+            FingerprintEvent.user_id,
+            user_id,
         ).scalar() or 0
 
-        avg_risk_before = db.query(func.avg(MaskingEvent.risk_before)).filter(MaskingEvent.user_id == user_id).scalar()
-        avg_risk_after = db.query(func.avg(MaskingEvent.risk_after)).filter(MaskingEvent.user_id == user_id).scalar()
+        avg_risk_before = apply_user_scope(
+            db.query(func.avg(MaskingEvent.risk_before)), MaskingEvent.user_id, user_id
+        ).scalar()
+        avg_risk_after = apply_user_scope(
+            db.query(func.avg(MaskingEvent.risk_after)), MaskingEvent.user_id, user_id
+        ).scalar()
 
         avg_before = round(float(avg_risk_before), 1) if avg_risk_before is not None else 0.0
         avg_after = round(float(avg_risk_after), 1) if avg_risk_after is not None else 0.0
 
         protection_rate = 0.0
         if signals_protected > 0 or total_events > 0:
-            total_probes = db.query(func.count(FingerprintEvent.id)).filter(FingerprintEvent.user_id == user_id).scalar() or 0
+            total_probes = apply_user_scope(
+                db.query(func.count(FingerprintEvent.id)), FingerprintEvent.user_id, user_id
+            ).scalar() or 0
             if total_probes > 0:
                 protection_rate = round(min(100.0, (signals_protected / total_probes) * 100.0), 1)
             else:
@@ -145,33 +157,53 @@ class ProtectionService:
         )
 
     @staticmethod
+    def get_domain_risk_map(db: Session, user_id: uuid.UUID) -> Dict[str, Tuple[float, float]]:
+        query = db.query(
+            MaskingEvent.domain,
+            func.avg(MaskingEvent.risk_before),
+            func.avg(MaskingEvent.risk_after),
+        )
+        query = apply_user_scope(query, MaskingEvent.user_id, user_id)
+        rows = query.group_by(MaskingEvent.domain).all()
+        return {
+            domain: (round(float(before), 1), round(float(after), 1))
+            for domain, before, after in rows
+            if before is not None and after is not None
+        }
+
+    @staticmethod
     def get_site_analytics(db: Session, user_id: uuid.UUID, site_id: uuid.UUID) -> Optional[SiteAnalytics]:
         site = db.query(ProtectedSite).filter(ProtectedSite.user_id == user_id, ProtectedSite.id == site_id).first()
         if not site:
             return None
 
         domain = site.domain
-        total_events = db.query(func.count(AnalyticsEvent.id)).filter(
-            AnalyticsEvent.domain == domain,
-            AnalyticsEvent.user_id == user_id
+        total_events = apply_user_scope(
+            db.query(func.count(AnalyticsEvent.id)).filter(AnalyticsEvent.domain == domain),
+            AnalyticsEvent.user_id,
+            user_id,
         ).scalar() or 0
 
-        probes = db.query(func.count(FingerprintEvent.id)).filter(
-            FingerprintEvent.domain == domain,
-            FingerprintEvent.user_id == user_id
+        probes = apply_user_scope(
+            db.query(func.count(FingerprintEvent.id)).filter(FingerprintEvent.domain == domain),
+            FingerprintEvent.user_id,
+            user_id,
         ).scalar() or 0
 
-        signals_masked = db.query(func.count(MaskingEvent.id)).filter(
-            MaskingEvent.domain == domain,
-            MaskingEvent.user_id == user_id
+        signals_masked = apply_user_scope(
+            db.query(func.count(MaskingEvent.id)).filter(MaskingEvent.domain == domain),
+            MaskingEvent.user_id,
+            user_id,
         ).scalar() or 0
 
-        # Per signal counts
         def count_signal(sig_name: str) -> int:
-            return db.query(func.count(FingerprintEvent.id)).filter(
-                FingerprintEvent.domain == domain,
-                FingerprintEvent.user_id == user_id,
-                FingerprintEvent.signal_type == sig_name
+            return apply_user_scope(
+                db.query(func.count(FingerprintEvent.id)).filter(
+                    FingerprintEvent.domain == domain,
+                    FingerprintEvent.signal_type.in_(RiskEngine.signal_aliases(sig_name))
+                ),
+                FingerprintEvent.user_id,
+                user_id,
             ).scalar() or 0
 
         canvas_cnt = count_signal("CANVAS")
@@ -182,17 +214,20 @@ class ProtectionService:
         media_cnt = count_signal("MEDIA_DEVICES")
         audio_cnt = count_signal("AUDIO")
 
-        avg_before = db.query(func.avg(MaskingEvent.risk_before)).filter(
-            MaskingEvent.domain == domain,
-            MaskingEvent.user_id == user_id
+        avg_before = apply_user_scope(
+            db.query(func.avg(MaskingEvent.risk_before)).filter(MaskingEvent.domain == domain),
+            MaskingEvent.user_id,
+            user_id,
         ).scalar()
-        avg_after = db.query(func.avg(MaskingEvent.risk_after)).filter(
-            MaskingEvent.domain == domain,
-            MaskingEvent.user_id == user_id
+        avg_after = apply_user_scope(
+            db.query(func.avg(MaskingEvent.risk_after)).filter(MaskingEvent.domain == domain),
+            MaskingEvent.user_id,
+            user_id,
         ).scalar()
-        avg_consistency = db.query(func.avg(FingerprintEvent.consistency_score)).filter(
-            FingerprintEvent.domain == domain,
-            FingerprintEvent.user_id == user_id
+        avg_consistency = apply_user_scope(
+            db.query(func.avg(FingerprintEvent.consistency_score)).filter(FingerprintEvent.domain == domain),
+            FingerprintEvent.user_id,
+            user_id,
         ).scalar()
 
         return SiteAnalytics(

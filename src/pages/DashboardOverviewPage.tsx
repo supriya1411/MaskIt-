@@ -65,6 +65,9 @@ export const DashboardOverviewPage: React.FC = () => {
   const activeProtectedSites = overview?.active_sites ?? sites.filter((s) => s.enabled).length;
   const signalsMasked = overview?.signals_masked ?? 0;
   const signalsDetected = overview?.signals_detected ?? 0;
+  const riskDelta = Math.round((riskBefore - riskAfter) * 10) / 10;
+  const formatScore = (value: number) =>
+    Number.isInteger(value) ? String(value) : value.toFixed(1);
 
   const formattedTimeline = timeline.slice(-8).map((t) => ({
     time: new Date(t.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -72,13 +75,28 @@ export const DashboardOverviewPage: React.FC = () => {
     probes: t.probes_count,
   }));
 
-  const chartData = formattedTimeline.length > 0 ? formattedTimeline : [
-    { time: '10:00', risk: 78, probes: 4 },
-    { time: '11:00', risk: 65, probes: 7 },
-    { time: '12:00', risk: 42, probes: 12 },
-    { time: '13:00', risk: 29, probes: 15 },
-    { time: '14:00', risk: 24, probes: 11 },
-  ];
+  const SIGNAL_STATUS: Record<string, string> = {
+    CANVAS: 'Masked',
+    WEBGL: 'Normalized',
+    AUDIO: 'Fuzzed',
+    SCREEN: 'Snapped',
+    TIMEZONE: 'Aligned',
+    FONTS: 'Spoofed',
+    HARDWARE: 'Normalized',
+    NAVIGATOR: 'Spoofed',
+    MEDIA_DEVICES: 'Limited',
+  };
+
+  const signalRows = (signals.length > 0
+    ? [...signals].sort((a, b) => (b.count + b.masked_count) - (a.count + a.masked_count))
+    : Object.keys(SIGNAL_STATUS).map((signal) => ({
+        signal,
+        count: 0,
+        masked_count: 0,
+        risk_level: 'MEDIUM' as const,
+        impact_weight: 0,
+      }))
+  ).slice(0, 5);
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
@@ -132,15 +150,15 @@ export const DashboardOverviewPage: React.FC = () => {
           <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
             <span>Risk Score</span>
             <span className="text-emerald-600 font-semibold bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded text-[11px]">
-              -{(riskBefore - riskAfter)} pts
+              {riskDelta > 0 ? `-${formatScore(riskDelta)} pts` : '0 pts'}
             </span>
           </div>
           <div className="flex items-baseline space-x-2">
             <span className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
-              {riskAfter}
+              {formatScore(riskAfter)}
             </span>
             <span className="text-xs text-slate-400">/ 100</span>
-            <span className="text-xs text-slate-400 line-through pl-1">from {riskBefore}</span>
+            <span className="text-xs text-slate-400 line-through pl-1">from {formatScore(riskBefore)}</span>
           </div>
           <p className="text-[11px] text-slate-500">Virtual profile active</p>
         </div>
@@ -153,7 +171,7 @@ export const DashboardOverviewPage: React.FC = () => {
           </div>
           <div className="flex items-baseline space-x-1">
             <span className="text-2xl font-bold text-blue-600 dark:text-blue-400 tabular-nums">
-              {protectionRate}%
+              {formatScore(protectionRate)}%
             </span>
           </div>
           <p className="text-[11px] text-slate-500">Probes neutralized</p>
@@ -184,7 +202,7 @@ export const DashboardOverviewPage: React.FC = () => {
             <span className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
               {signalsMasked}
             </span>
-            <span className="text-xs text-slate-400">of {signalsDetected || signalsMasked}</span>
+            <span className="text-xs text-slate-400">of {signalsDetected}</span>
           </div>
           <p className="text-[11px] text-slate-500">Hardware & browser vectors</p>
         </div>
@@ -200,13 +218,18 @@ export const DashboardOverviewPage: React.FC = () => {
               <p className="text-xs text-slate-500">Trackability reduction after client virtualization</p>
             </div>
             <span className="text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2.5 py-1 rounded">
-              Average: {riskAfter}/100
+              Average: {formatScore(riskAfter)}/100
             </span>
           </div>
 
           <div className="h-60 w-full text-xs">
+            {formattedTimeline.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-slate-400">
+                No probe timeline yet — run a scan or wait for extension telemetry.
+              </div>
+            ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
+              <LineChart data={formattedTimeline}>
                 <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#334155' : '#E2E8F0'} vertical={false} />
                 <XAxis dataKey="time" stroke="#94A3B8" fontSize={11} tickLine={false} />
                 <YAxis stroke="#94A3B8" fontSize={11} tickLine={false} domain={[0, 100]} />
@@ -229,6 +252,7 @@ export const DashboardOverviewPage: React.FC = () => {
                 />
               </LineChart>
             </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -240,24 +264,35 @@ export const DashboardOverviewPage: React.FC = () => {
           </div>
 
           <div className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
-            {[
-              { name: 'Canvas 2D Hash', status: 'Masked', weight: 'High' },
-              { name: 'WebGL Renderer', status: 'Normalized', weight: 'High' },
-              { name: 'AudioContext DSP', status: 'Fuzzed', weight: 'High' },
-              { name: 'Screen & DPI', status: 'Snapped', weight: 'Medium' },
-              { name: 'Timezone Offset', status: 'Aligned', weight: 'Low' },
-            ].map((sig) => (
-              <div key={sig.name} className="py-2.5 flex items-center justify-between">
+            {signalRows.map((sig) => {
+              const masked = sig.masked_count > 0;
+              const detected = sig.count > 0;
+              const status = masked
+                ? (SIGNAL_STATUS[sig.signal] || 'Masked')
+                : detected
+                  ? 'Detected'
+                  : 'Idle';
+              return (
+              <div key={sig.signal} className="py-2.5 flex items-center justify-between">
                 <div>
-                  <span className="font-medium text-slate-800 dark:text-slate-200 block">{sig.name}</span>
-                  <span className="text-[11px] text-slate-400">{sig.weight} Entropy</span>
+                  <span className="font-medium text-slate-800 dark:text-slate-200 block">{sig.signal}</span>
+                  <span className="text-[11px] text-slate-400">
+                    {sig.risk_level} entropy · {sig.masked_count}/{sig.count || sig.masked_count} masked
+                  </span>
                 </div>
-                <span className="inline-flex items-center space-x-1 text-emerald-600 dark:text-emerald-400 font-medium bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded text-[11px]">
+                <span className={`inline-flex items-center space-x-1 font-medium px-2 py-0.5 rounded text-[11px] ${
+                  masked
+                    ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40'
+                    : detected
+                      ? 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40'
+                      : 'text-slate-500 bg-slate-100 dark:bg-slate-800'
+                }`}>
                   <CheckCircle2 className="w-3 h-3" />
-                  <span>{sig.status}</span>
+                  <span>{status}</span>
                 </span>
               </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="pt-2">
@@ -300,6 +335,13 @@ export const DashboardOverviewPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {recentEvents.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="py-8 text-center text-slate-400">
+                    No telemetry yet — run a scan, protect a site, or fire a test probe.
+                  </td>
+                </tr>
+              )}
               {recentEvents.map((ev) => (
                 <tr key={ev.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
                   <td className="py-2.5 px-3 text-slate-400 tabular-nums">

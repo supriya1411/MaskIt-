@@ -12,6 +12,7 @@ from app.schemas.dashboard import (
     DashboardOverviewResponse, TimelinePoint, SignalStat, RiskDistribution
 )
 from app.services.risk_engine import RiskEngine
+from app.utils.query_scope import apply_user_scope
 
 class AnalyticsService:
     @staticmethod
@@ -26,40 +27,31 @@ class AnalyticsService:
         # 2. Scans today
         now = datetime.now(timezone.utc)
         today_start = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
-        
+
         events_today_query = db.query(func.count(AnalyticsEvent.id)).filter(AnalyticsEvent.timestamp >= today_start)
-        if user_id:
-            events_today_query = events_today_query.filter(AnalyticsEvent.user_id == user_id)
+        events_today_query = apply_user_scope(events_today_query, AnalyticsEvent.user_id, user_id)
         scans_today = events_today_query.scalar() or 0
 
         # 3. Fingerprint probes
         probes_query = db.query(func.count(FingerprintEvent.id))
-        if user_id:
-            probes_query = probes_query.filter(FingerprintEvent.user_id == user_id)
+        probes_query = apply_user_scope(probes_query, FingerprintEvent.user_id, user_id)
         fingerprint_probes = probes_query.scalar() or 0
 
         # 4. Signals detected & masked
         signals_detected = fingerprint_probes
         masked_query = db.query(func.count(MaskingEvent.id))
-        if user_id:
-            masked_query = masked_query.filter(MaskingEvent.user_id == user_id)
+        masked_query = apply_user_scope(masked_query, MaskingEvent.user_id, user_id)
         signals_masked = masked_query.scalar() or 0
 
         # 5. High risk events
         high_risk_query = db.query(func.count(FingerprintEvent.id)).filter(FingerprintEvent.risk_score >= 70.0)
-        if user_id:
-            high_risk_query = high_risk_query.filter(FingerprintEvent.user_id == user_id)
+        high_risk_query = apply_user_scope(high_risk_query, FingerprintEvent.user_id, user_id)
         high_risk_events = high_risk_query.scalar() or 0
 
         # 6. Average risks and consistency
-        avg_before_q = db.query(func.avg(MaskingEvent.risk_before))
-        avg_after_q = db.query(func.avg(MaskingEvent.risk_after))
-        avg_cons_q = db.query(func.avg(FingerprintEvent.consistency_score))
-
-        if user_id:
-            avg_before_q = avg_before_q.filter(MaskingEvent.user_id == user_id)
-            avg_after_q = avg_after_q.filter(MaskingEvent.user_id == user_id)
-            avg_cons_q = avg_cons_q.filter(FingerprintEvent.user_id == user_id)
+        avg_before_q = apply_user_scope(db.query(func.avg(MaskingEvent.risk_before)), MaskingEvent.user_id, user_id)
+        avg_after_q = apply_user_scope(db.query(func.avg(MaskingEvent.risk_after)), MaskingEvent.user_id, user_id)
+        avg_cons_q = apply_user_scope(db.query(func.avg(FingerprintEvent.consistency_score)), FingerprintEvent.user_id, user_id)
 
         raw_before = avg_before_q.scalar()
         raw_after = avg_after_q.scalar()
@@ -98,9 +90,7 @@ class AnalyticsService:
             FingerprintEvent.timestamp,
             FingerprintEvent.risk_score
         ).filter(FingerprintEvent.timestamp >= cutoff)
-        
-        if user_id:
-            query = query.filter(FingerprintEvent.user_id == user_id)
+        query = apply_user_scope(query, FingerprintEvent.user_id, user_id)
             
         events = query.order_by(FingerprintEvent.timestamp.asc()).all()
         if not events:
@@ -121,11 +111,14 @@ class AnalyticsService:
     def get_signals_breakdown(db: Session, user_id: Optional[UUID] = None) -> List[SignalStat]:
         stats = []
         for signal_name, conf in RiskEngine.SIGNAL_CLASSIFICATION.items():
-            probe_q = db.query(func.count(FingerprintEvent.id)).filter(FingerprintEvent.signal_type == signal_name)
-            mask_q = db.query(func.count(MaskingEvent.id)).filter(MaskingEvent.signal_type == signal_name)
-            if user_id:
-                probe_q = probe_q.filter(FingerprintEvent.user_id == user_id)
-                mask_q = mask_q.filter(MaskingEvent.user_id == user_id)
+            probe_q = db.query(func.count(FingerprintEvent.id)).filter(
+                FingerprintEvent.signal_type.in_(RiskEngine.signal_aliases(signal_name))
+            )
+            mask_q = db.query(func.count(MaskingEvent.id)).filter(
+                MaskingEvent.signal_type.in_(RiskEngine.signal_aliases(signal_name))
+            )
+            probe_q = apply_user_scope(probe_q, FingerprintEvent.user_id, user_id)
+            mask_q = apply_user_scope(mask_q, MaskingEvent.user_id, user_id)
             
             cnt = probe_q.scalar() or 0
             masked_cnt = mask_q.scalar() or 0
@@ -141,9 +134,7 @@ class AnalyticsService:
 
     @staticmethod
     def get_risk_distribution(db: Session, user_id: Optional[UUID] = None) -> RiskDistribution:
-        q = db.query(FingerprintEvent.risk_score)
-        if user_id:
-            q = q.filter(FingerprintEvent.user_id == user_id)
+        q = apply_user_scope(db.query(FingerprintEvent.risk_score), FingerprintEvent.user_id, user_id)
         scores = [row[0] for row in q.all()]
 
         if not scores:

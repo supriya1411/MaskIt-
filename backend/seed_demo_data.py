@@ -23,6 +23,7 @@ from app.models.fingerprint_event import FingerprintEvent
 from app.models.masking_event import MaskingEvent
 from app.models.analytics_event import AnalyticsEvent
 from app.models.protected_site import ProtectedSite
+from app.models.user import User
 
 # Create all tables if they don't exist yet
 Base.metadata.create_all(bind=engine)
@@ -34,15 +35,26 @@ DOMAINS = [
 ]
 
 SIGNALS = [
-    ("Canvas 2D Hash",      "HIGH",   35),
-    ("WebGL Renderer",      "HIGH",   32),
-    ("AudioContext DSP",    "HIGH",   30),
-    ("Screen & DPI",        "MEDIUM", 20),
-    ("Hardware Concurrency","MEDIUM", 18),
-    ("Timezone Offset",     "LOW",    10),
-    ("Navigator Platform",  "LOW",     8),
-    ("Battery Status",      "LOW",     6),
+    ("CANVAS", "HIGH", 35),
+    ("WEBGL", "HIGH", 32),
+    ("AUDIO", "HIGH", 30),
+    ("SCREEN", "MEDIUM", 20),
+    ("HARDWARE", "MEDIUM", 18),
+    ("TIMEZONE", "LOW", 10),
+    ("NAVIGATOR", "LOW", 8),
+    ("MEDIA_DEVICES", "LOW", 6),
 ]
+
+SIGNAL_REMAP = {
+    "Canvas 2D Hash": "CANVAS",
+    "WebGL Renderer": "WEBGL",
+    "AudioContext DSP": "AUDIO",
+    "Screen & DPI": "SCREEN",
+    "Hardware Concurrency": "HARDWARE",
+    "Timezone Offset": "TIMEZONE",
+    "Navigator Platform": "NAVIGATOR",
+    "Battery Status": "MEDIA_DEVICES",
+}
 
 ACTIONS = ["MASKED", "NOISE_INJECTED", "NORMALIZED", "BLOCKED"]
 
@@ -53,17 +65,62 @@ def rand_ts(hours_ago_max: int = 72) -> datetime:
 def seed():
     db = SessionLocal()
     try:
-        # Check if already seeded
-        existing = db.query(FingerprintEvent).count()
-        if existing >= 50:
-            print(f"Database already has {existing} fingerprint events. Skipping seed.")
+        demo_user = db.query(User).filter(User.email == "evaluator@maskit.dev").first()
+        demo_user_id = demo_user.id if demo_user else None
+
+        # Normalize legacy display names and attach orphan telemetry to the demo user
+        remapped = 0
+        for model in (FingerprintEvent, MaskingEvent):
+            rows = db.query(model).all()
+            for row in rows:
+                new_name = SIGNAL_REMAP.get(row.signal_type)
+                if new_name:
+                    row.signal_type = new_name
+                    remapped += 1
+                if demo_user_id and row.user_id is None:
+                    row.user_id = demo_user_id
+        for row in db.query(AnalyticsEvent).all():
+            if demo_user_id and row.user_id is None:
+                row.user_id = demo_user_id
+            meta = row.privacy_safe_metadata or {}
+            if meta.get("signal_type") in SIGNAL_REMAP:
+                meta = {**meta, "signal_type": SIGNAL_REMAP[meta["signal_type"]]}
+                row.privacy_safe_metadata = meta
+        db.commit()
+        if remapped:
+            print(f"Normalized {remapped} legacy signal labels.")
+
+        seeded_sites = 0
+        if demo_user_id:
+            from app.services.protection_service import ProtectionService
+            policy = ProtectionService.get_or_create_default_policy(db, demo_user_id)
+            for domain in DOMAINS:
+                site = db.query(ProtectedSite).filter(
+                    ProtectedSite.user_id == demo_user_id,
+                    ProtectedSite.domain == domain,
+                ).first()
+                if site:
+                    continue
+                db.add(ProtectedSite(
+                    user_id=demo_user_id,
+                    domain=domain,
+                    enabled=True,
+                    policy_id=policy.id,
+                    last_activity_at=rand_ts(24),
+                ))
+                seeded_sites += 1
+            db.commit()
+            if seeded_sites:
+                print(f"Added {seeded_sites} protected sites for evaluator@maskit.dev")
+        else:
+            print("  (Skipping protected sites — demo user not created yet. Use Instant Demo once, then re-run seeder.)")
+
+        existing_events = db.query(FingerprintEvent).count()
+        if existing_events >= 50:
+            print(f"Database already has {existing_events} fingerprint events. Skipping new telemetry seed.")
             return
 
         print("Seeding demo data ...")
-
-        # Skip ProtectedSite seeding (requires a valid user_id FK)
-        seeded_sites = 0
-        print("  (Skipping protected sites — requires a logged-in user)")
 
 
         # Fingerprint + Masking + Analytics Events
@@ -82,6 +139,7 @@ def seed():
             action = random.choice(ACTIONS)
 
             fp_ev = FingerprintEvent(
+                user_id=demo_user_id,
                 session_id=None,
                 domain=domain,
                 signal_type=signal_name,
@@ -94,6 +152,7 @@ def seed():
             fp_count += 1
 
             mask_ev = MaskingEvent(
+                user_id=demo_user_id,
                 session_id=fp_ev.session_id,
                 domain=domain,
                 signal_type=signal_name,
@@ -108,6 +167,7 @@ def seed():
             mask_count += 1
 
             analytics_ev = AnalyticsEvent(
+                user_id=demo_user_id,
                 domain=domain,
                 event_type="PROBE_MASKED",
                 risk_score=round(risk_after, 1),

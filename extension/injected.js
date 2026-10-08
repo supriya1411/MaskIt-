@@ -31,10 +31,32 @@
     }
   });
 
+  // Debounced probe reporter
+  const reportedRecently = new Set();
+  function notifyProbe(signal) {
+    if (!activeConfig.enabled) return;
+    if (reportedRecently.has(signal)) return;
+    reportedRecently.add(signal);
+    setTimeout(() => reportedRecently.delete(signal), 3000);
+    try {
+      window.postMessage({
+        type: 'MASKIT_PROBE_DETECTED',
+        signal: signal,
+        domain: window.location.hostname
+      }, '*');
+    } catch (e) {}
+  }
+
   // 1. Hardware Concurrency (CPU Cores)
   try {
     Object.defineProperty(navigator, 'hardwareConcurrency', {
-      get: () => activeConfig.enabled && activeConfig.maskHardware ? activeConfig.spoofedCPU : 16,
+      get: () => {
+        if (activeConfig.enabled && activeConfig.maskHardware) {
+          notifyProbe('HARDWARE');
+          return activeConfig.spoofedCPU;
+        }
+        return 16;
+      },
       configurable: true,
     });
   } catch (e) {}
@@ -53,6 +75,9 @@
     const screenProxy = new Proxy(origScreen, {
       get(target, prop) {
         if (!activeConfig.enabled || !activeConfig.maskScreen) return target[prop];
+        if (prop === 'width' || prop === 'availWidth' || prop === 'height' || prop === 'availHeight') {
+          notifyProbe('SCREEN');
+        }
         if (prop === 'width' || prop === 'availWidth') return activeConfig.spoofedScreen.width;
         if (prop === 'height' || prop === 'availHeight') return activeConfig.spoofedScreen.height;
         if (prop === 'colorDepth' || prop === 'pixelDepth') return 24;
@@ -73,9 +98,15 @@
     glProto.getParameter = function (param) {
       if (activeConfig.enabled && activeConfig.maskWebGL) {
         // UNMASKED_VENDOR_WEBGL = 0x9245
-        if (param === 0x9245) return 'Google Inc. (MaskIt Cohort)';
+        if (param === 0x9245) {
+          notifyProbe('WEBGL');
+          return 'Google Inc. (MaskIt Cohort)';
+        }
         // UNMASKED_RENDERER_WEBGL = 0x9246
-        if (param === 0x9246) return 'ANGLE (Generic Standard Display Driver)';
+        if (param === 0x9246) {
+          notifyProbe('WEBGL');
+          return 'ANGLE (Generic Standard Display Driver)';
+        }
       }
       return origGetParameter.apply(this, arguments);
     };
@@ -91,6 +122,7 @@
     const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
     HTMLCanvasElement.prototype.toDataURL = function (type, ...args) {
       if (activeConfig.enabled && activeConfig.maskCanvas && this.width > 0 && this.height > 0) {
+        notifyProbe('CANVAS');
         try {
           const ctx = this.getContext('2d');
           if (ctx) {
@@ -106,6 +138,7 @@
     const origToBlob = HTMLCanvasElement.prototype.toBlob;
     HTMLCanvasElement.prototype.toBlob = function (callback, ...args) {
       if (activeConfig.enabled && activeConfig.maskCanvas && this.width > 0 && this.height > 0) {
+        notifyProbe('CANVAS');
         try {
           const ctx = this.getContext('2d');
           if (ctx) {
@@ -130,6 +163,7 @@
         analyser.getFloatFrequencyData = function (array) {
           origGetFloatFreq.apply(this, arguments);
           if (activeConfig.enabled && activeConfig.maskAudio && array && array.length) {
+            notifyProbe('AUDIO');
             const jitter = (Math.random() - 0.5) * 0.05;
             for (let i = 0; i < Math.min(array.length, 16); i++) {
               array[i] += jitter;

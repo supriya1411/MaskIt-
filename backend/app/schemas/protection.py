@@ -20,6 +20,8 @@ class SiteResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     last_activity_at: Optional[datetime] = None
+    risk_before: float = 0.0
+    risk_after: float = 0.0
 
     model_config = {"from_attributes": True}
 

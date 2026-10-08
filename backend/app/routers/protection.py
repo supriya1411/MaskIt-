@@ -16,7 +16,7 @@ from app.routers.websocket import broadcast_dashboard_event
 
 router = APIRouter(prefix="/protection", tags=["Protect My Data"])
 
-def _to_site_response(site) -> SiteResponse:
+def _to_site_response(site, risk_before: float = 0.0, risk_after: float = 0.0) -> SiteResponse:
     return SiteResponse(
         id=site.id,
         domain=site.domain,
@@ -25,7 +25,9 @@ def _to_site_response(site) -> SiteResponse:
         policy_id=site.policy_id,
         created_at=site.created_at,
         updated_at=site.updated_at,
-        last_activity_at=site.last_activity_at
+        last_activity_at=site.last_activity_at,
+        risk_before=risk_before,
+        risk_after=risk_after,
     )
 
 @router.post("/sites", response_model=SiteResponse, status_code=201)
@@ -78,7 +80,11 @@ def get_protected_sites(
 ):
     """Returns only the authenticated user's registered protected domains."""
     sites = ProtectionService.get_user_sites(db=db, user_id=current_user.id)
-    return [_to_site_response(s) for s in sites]
+    risk_map = ProtectionService.get_domain_risk_map(db=db, user_id=current_user.id)
+    return [
+        _to_site_response(s, *risk_map.get(s.domain, (0.0, 0.0)))
+        for s in sites
+    ]
 
 @router.put("/sites/{site_id}", response_model=SiteResponse)
 async def update_protected_site(

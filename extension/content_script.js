@@ -58,4 +58,19 @@
       );
     }
   });
+
+  // Listen for live probe detections from injected script and forward to extension background
+  window.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'MASKIT_PROBE_DETECTED') {
+      try {
+        chrome.runtime.sendMessage({
+          type: 'RECORD_TELEMETRY',
+          signal: event.data.signal,
+          domain: currentDomain,
+        });
+      } catch (e) {
+        // Extension context might be invalidated on reload
+      }
+    }
+  });
 })();

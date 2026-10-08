@@ -6,8 +6,8 @@ import { ErrorBanner } from '../components/common/ErrorBanner';
 import { ThemeToggle } from '../components/common/ThemeToggle';
 
 export const LoginPage: React.FC = () => {
-  const [email, setEmail] = useState('demo@maskit.dev');
-  const [password, setPassword] = useState('SecurePass123!');
+  const [email, setEmail] = useState('evaluator@maskit.dev');
+  const [password, setPassword] = useState('DemoSession123!');
   const { login, loginAsDemo, isLoading, error, clearError } = useAuthStore();
   const navigate = useNavigate();
 
@@ -129,8 +129,8 @@ export const LoginPage: React.FC = () => {
             <button
               type="button"
               onClick={() => {
-                setEmail('demo@maskit.dev');
-                setPassword('SecurePass123!');
+                setEmail('evaluator@maskit.dev');
+                setPassword('DemoSession123!');
               }}
               className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
             >

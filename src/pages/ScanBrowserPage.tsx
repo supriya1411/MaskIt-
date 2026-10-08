@@ -210,6 +210,9 @@ export const ScanBrowserPage: React.FC = () => {
 
       setScanStep('Calculating Risk Engine Deterministic Score...');
 
+      let scanResult: FingerprintAnalyzeResponse | null = null;
+      let beforeScore = unprotectedScore;
+
       try {
         const analyzeResponse = await api.analyzeFingerprint(payload);
 
@@ -218,7 +221,8 @@ export const ScanBrowserPage: React.FC = () => {
           // The backend may still return MEDIUM/HIGH due to screen/navigator/timezone signals.
           // MaskIt's local override shows the correct shielded LOW-risk verdict.
           const maskedScore = Math.min(analyzeResponse.risk_score, 22.0);
-          setResult({
+          beforeScore = analyzeResponse.risk_score;
+          scanResult = {
             ...analyzeResponse,
             risk_score: maskedScore,
             risk_level: 'LOW',
@@ -229,16 +233,18 @@ export const ScanBrowserPage: React.FC = () => {
               impact: Number((rf.impact * 0.18).toFixed(1)),
               reason: `[SHIELDED] ${rf.reason}`,
             })),
-          });
+          };
         } else {
-          setResult(analyzeResponse);
+          scanResult = analyzeResponse;
+          beforeScore = analyzeResponse.risk_score;
           setUnprotectedScore(analyzeResponse.risk_score);
         }
       } catch (backendErr) {
         // Fallback calculations if backend connection has delay
         if (activeShield) {
           const dynamicScore = Number((21.4 + (Math.random() * 2.8 - 1.4)).toFixed(1));
-          setResult({
+          beforeScore = 99.8;
+          scanResult = {
             risk_score: dynamicScore,
             risk_level: 'LOW',
             consistency_score: 100.0,
@@ -251,9 +257,9 @@ export const ScanBrowserPage: React.FC = () => {
               { signal: 'AUDIO', impact: 4.5, reason: 'Micro-jitter applied to oscillator frequency curve.' },
               { signal: 'HARDWARE', impact: 3.5, reason: 'Device concurrency normalized to typical 4-core profile.' },
             ],
-          });
+          };
         } else {
-          setResult({
+          scanResult = {
             risk_score: 99.8,
             risk_level: 'HIGH',
             consistency_score: 100.0,
@@ -267,9 +273,33 @@ export const ScanBrowserPage: React.FC = () => {
               { signal: 'HARDWARE', impact: 12.0, reason: `${rawHwData.cpu_cores} Threads with high device memory narrows device cohort.` },
               { signal: 'FONTS', impact: 14.0, reason: 'Extensive font enumeration separates individual workstation.' },
             ],
-          });
+          };
+          beforeScore = 99.8;
           setUnprotectedScore(99.8);
         }
+      }
+
+      if (scanResult) {
+        setResult(scanResult);
+        const signals = (scanResult.detected_signals || [])
+          .map((s) => s.replace(/\s*\(.*\)$/, '').trim())
+          .filter(Boolean)
+          .slice(0, 6);
+        await Promise.allSettled(
+          signals.map((signal_type) =>
+            api.logEvent({
+              domain: 'this-browser.local',
+              event_type: activeShield ? 'MASK_APPLIED' : 'FINGERPRINT_PROBE',
+              signal_type,
+              action: activeShield ? 'MASKED' : 'DETECTED',
+              risk_score: scanResult!.risk_score,
+              risk_before: beforeScore,
+              risk_after: scanResult!.risk_score,
+              consistency_score: scanResult!.consistency_score,
+              source: 'DASHBOARD',
+            })
+          )
+        );
       }
 
       const now = new Date();

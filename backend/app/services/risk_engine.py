@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Optional, Tuple
 from app.services.consistency_engine import ConsistencyEngine
 from app.utils.privacy import estimate_signal_entropy
 
@@ -55,6 +55,38 @@ class RiskEngine:
             "reason": "Timezone and offset narrow geographical location but are shared among many users in the same region."
         }
     }
+
+    SIGNAL_ALIASES = {
+        "CANVAS": ["CANVAS", "Canvas 2D Hash", "CANVAS_2D", "CANVAS_HASH"],
+        "WEBGL": ["WEBGL", "WebGL Renderer", "WEBGL_GPU", "WEBGL_RENDERER"],
+        "AUDIO": ["AUDIO", "AudioContext DSP", "AUDIO_DSP"],
+        "FONTS": ["FONTS", "FONT_ENUM"],
+        "MEDIA_DEVICES": ["MEDIA_DEVICES", "Battery Status"],
+        "HARDWARE": ["HARDWARE", "Hardware Concurrency", "HARDWARE_CPU", "HARDWARE_CORES"],
+        "NAVIGATOR": ["NAVIGATOR", "Navigator Platform"],
+        "SCREEN": ["SCREEN", "Screen & DPI", "SCREEN_METRIC"],
+        "TIMEZONE": ["TIMEZONE", "Timezone Offset"],
+    }
+
+    @classmethod
+    def signal_aliases(cls, signal_name: str) -> List[str]:
+        names = cls.SIGNAL_ALIASES.get(signal_name, [signal_name])
+        return list(dict.fromkeys([signal_name, *names]))
+
+    @classmethod
+    def canonicalize_signal(cls, signal_type: Optional[str]) -> Optional[str]:
+        if not signal_type:
+            return None
+        lookup = {}
+        for canonical, aliases in cls.SIGNAL_ALIASES.items():
+            for alias in (*aliases, canonical):
+                lookup[alias] = canonical
+                lookup[alias.upper()] = canonical
+                lookup[alias.upper().replace(" ", "_")] = canonical
+        for key in (signal_type, signal_type.upper(), signal_type.upper().replace(" ", "_")):
+            if key in lookup:
+                return lookup[key]
+        return signal_type
 
     @classmethod
     def analyze(cls, signals: Dict[str, Any]) -> Dict[str, Any]:

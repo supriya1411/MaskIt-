@@ -23,38 +23,6 @@ export const LiveActivityPage: React.FC = () => {
             risk_after: d.risk_after || d.risk_score,
             timestamp: d.timestamp,
           })));
-        } else {
-          // Provide initial sample events so feed is populated on first launch
-          const now = Date.now();
-          setEvents([
-            {
-              event: 'PROBE_INTERCEPTED',
-              domain: 'youtube.com',
-              signal: 'CANVAS',
-              action: 'NOISE_INJECTED',
-              risk_before: 89,
-              risk_after: 22,
-              timestamp: new Date(now - 12000).toISOString(),
-            },
-            {
-              event: 'PROBE_INTERCEPTED',
-              domain: 'tiktok.com',
-              signal: 'HARDWARE_CORES',
-              action: 'NORMALIZED_4_CORES',
-              risk_before: 96,
-              risk_after: 26,
-              timestamp: new Date(now - 45000).toISOString(),
-            },
-            {
-              event: 'PROBE_INTERCEPTED',
-              domain: 'google.com',
-              signal: 'WEBGL_RENDERER',
-              action: 'ANGLE_MASKED',
-              risk_before: 79,
-              risk_after: 19,
-              timestamp: new Date(now - 90000).toISOString(),
-            },
-          ]);
         }
       })
       .catch(() => {});
@@ -83,11 +51,13 @@ export const LiveActivityPage: React.FC = () => {
     const signal = signals[Math.floor(Math.random() * signals.length)];
 
     const payload = {
-      event_type: 'FINGERPRINT_PROBE_MASKED',
+      event_type: 'FINGERPRINT_PROBE',
       domain,
       signal_type: signal,
       action: 'MASKED',
-      risk_score: 22,
+      source: 'DASHBOARD',
+      risk_before: 72 + Math.floor(Math.random() * 20),
+      risk_after: 16 + Math.floor(Math.random() * 12),
     };
 
     try {

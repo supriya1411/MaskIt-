@@ -28,6 +28,30 @@ def test_protect_site_flow(client, auth_headers):
     del_res = client.delete(f"/api/v1/protection/sites/{site_id}", headers=auth_headers)
     assert del_res.status_code == 204
 
+def test_protected_sites_include_real_risk(client, auth_headers):
+    client.post("/api/v1/protection/sites", json={"domain": "reddit.com"}, headers=auth_headers)
+    client.post("/api/v1/events", json={
+        "domain": "reddit.com",
+        "event_type": "FINGERPRINT_PROBE",
+        "signal_type": "CANVAS_HASH",
+        "action": "MASKED",
+        "risk_before": 81.0,
+        "risk_after": 19.0,
+    }, headers=auth_headers)
+
+    sites = client.get("/api/v1/protection/sites", headers=auth_headers).json()
+    reddit = next(s for s in sites if s["domain"] == "reddit.com")
+    assert reddit["risk_before"] == 81.0
+    assert reddit["risk_after"] == 19.0
+
+    analytics = client.get(
+        f"/api/v1/protection/sites/{reddit['id']}/analytics",
+        headers=auth_headers,
+    ).json()
+    assert analytics["canvas_events"] >= 1
+    assert analytics["risk_before"] == 81.0
+
+
 def test_protect_invalid_domain_rejected(client, auth_headers):
     res = client.post("/api/v1/protection/sites", json={
         "domain": "invalid..domain"

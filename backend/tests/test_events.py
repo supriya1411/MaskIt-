@@ -26,4 +26,8 @@ def test_ingest_telemetry_event(client, auth_headers):
     assert events_res.status_code == 200
     events = events_res.json()
     assert len(events) >= 1
-    assert any(e["domain"] == "youtube.com" for e in events)
+    stored = next(e for e in events if e["domain"] == "youtube.com")
+    assert stored["signal_type"] == "WEBGL"
+    assert stored["action"] == "MASKED"
+    assert stored["risk_before"] == 82.0
+    assert stored["risk_after"] == 24.0

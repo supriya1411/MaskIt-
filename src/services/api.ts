@@ -151,6 +151,8 @@ export interface ProtectedSite {
   created_at: string;
   updated_at: string;
   last_activity_at?: string | null;
+  risk_before?: number;
+  risk_after?: number;
 }
 
 export interface ProtectionSummary {
@@ -448,6 +450,10 @@ export const api = {
     signal_type?: string;
     action?: string;
     risk_score?: number;
+    risk_before?: number;
+    risk_after?: number;
+    consistency_score?: number;
+    source?: string;
   }): Promise<any> => {
     const { data } = await apiClient.post('/events', payload);
     return data;

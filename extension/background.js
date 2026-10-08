@@ -21,15 +21,83 @@ const DEFAULT_SETTINGS = {
   spoofedRAM: 8,
 };
 
-// Initialize storage on install
+// Backend API configuration
+const BACKEND_API_URL = 'http://localhost:8000/api/v1';
+
+// Register extension instance with backend
+async function registerWithBackend() {
+  try {
+    const res = await fetch(`${BACKEND_API_URL}/extension/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_version: '1.0.0', browser_type: 'Chrome' }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      await chrome.storage.local.set({ maskit_extension_id: data.extension_id });
+      console.log('[MaskIt] Registered with backend:', data.extension_id);
+    }
+  } catch (e) {
+    // Backend may not be active yet, graceful fallback
+  }
+}
+
+// Sync protected sites from backend to local extension storage
+async function syncBackendConfig() {
+  try {
+    const res = await fetch(`${BACKEND_API_URL}/extension/config`);
+    if (res.ok) {
+      const data = await res.json();
+      const current = await chrome.storage.local.get('maskit_settings');
+      const settings = current.maskit_settings || DEFAULT_SETTINGS;
+
+      if (data.sites && Array.isArray(data.sites)) {
+        const backendDomains = data.sites.filter((s) => s.enabled).map((s) => s.domain);
+        const merged = Array.from(new Set([...settings.protectedDomains, ...backendDomains]));
+        settings.protectedDomains = merged;
+        await chrome.storage.local.set({ maskit_settings: settings });
+        console.log('[MaskIt] Synced protected sites from backend:', merged.length);
+      }
+    }
+  } catch (e) {
+    // Graceful offline fallback
+  }
+}
+
+// Send live probe telemetry to backend
+async function sendTelemetryToBackend(domain, signal, action = 'MASKED') {
+  try {
+    await fetch(`${BACKEND_API_URL}/extension/event`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        domain: domain,
+        event_type: 'FINGERPRINT_PROBE',
+        signal_type: signal,
+        action: action,
+        source: 'EXTENSION',
+      }),
+    });
+  } catch (e) {
+    // Offline or network error
+  }
+}
+
+// Initialize storage & sync on install
 chrome.runtime.onInstalled.addListener(async () => {
   const existing = await chrome.storage.local.get('maskit_settings');
   if (!existing.maskit_settings) {
     await chrome.storage.local.set({ maskit_settings: DEFAULT_SETTINGS });
     await chrome.storage.local.set({ maskit_domain_stats: {} });
   }
+  await registerWithBackend();
+  await syncBackendConfig();
   console.log('[MaskIt] Extension installed & initialized.');
 });
+
+// Periodic background sync with backend every 30 seconds
+setInterval(syncBackendConfig, 30000);
+syncBackendConfig();
 
 // Listen for messages from popup and content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -119,6 +187,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.storage.local.get('maskit_domain_stats').then((data) => {
       sendResponse({ stats: data.maskit_domain_stats || {} });
     });
+    return true;
+  }
+
+  if (message.type === 'RECORD_TELEMETRY') {
+    const { domain, signal } = message;
+    if (domain) {
+      recordDomainAction(domain, 'probed');
+      sendTelemetryToBackend(domain, signal || 'GENERIC', 'MASKED');
+    }
+    sendResponse({ ok: true });
     return true;
   }
 });

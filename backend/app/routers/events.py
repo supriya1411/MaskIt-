@@ -13,6 +13,8 @@ from app.models.masking_event import MaskingEvent
 from app.schemas.event import TelemetryEventCreate, TelemetryEventResponse
 from app.utils.privacy import sanitize_privacy_metadata
 from app.routers.websocket import broadcast_dashboard_event
+from app.utils.query_scope import apply_user_scope
+from app.services.risk_engine import RiskEngine
 
 router = APIRouter(prefix="/events", tags=["Telemetry & Events"])
 
@@ -27,13 +29,22 @@ async def record_event(
     Applies privacy filter to sanitize any accidental PII, cookies, or raw byte payloads.
     Broadcasts real-time notification to active WebSocket dashboard listeners.
     """
-    clean_meta = sanitize_privacy_metadata(event_in.privacy_safe_metadata)
+    clean_meta = sanitize_privacy_metadata(event_in.privacy_safe_metadata) or {}
     user_id = current_user.id if current_user else None
 
     risk_before = event_in.risk_before if event_in.risk_before is not None else (event_in.risk_score or 50.0)
     risk_after = event_in.risk_after if event_in.risk_after is not None else max(10.0, risk_before * 0.3)
     consistency_score = event_in.consistency_score if event_in.consistency_score is not None else 98.0
     action = event_in.action or ("MASKED" if event_in.event_type == "MASK_APPLIED" else "DETECTED")
+    signal_type = RiskEngine.canonicalize_signal(event_in.signal_type)
+
+    clean_meta.update({
+        "signal_type": signal_type,
+        "action": action,
+        "risk_before": risk_before,
+        "risk_after": risk_after,
+        "consistency_score": consistency_score,
+    })
 
     # Ingest into AnalyticsEvent
     analytics_ev = AnalyticsEvent(
@@ -47,12 +58,12 @@ async def record_event(
     db.add(analytics_ev)
 
     # Ingest to FingerprintEvent or MaskingEvent depending on type
-    if event_in.signal_type:
+    if signal_type:
         fp_ev = FingerprintEvent(
             user_id=user_id,
             session_id=event_in.session_id,
             domain=event_in.domain.lower(),
-            signal_type=event_in.signal_type,
+            signal_type=signal_type,
             probe_method=event_in.probe_method or "JS_API_PROBE",
             risk_score=risk_before,
             consistency_score=consistency_score
@@ -64,7 +75,7 @@ async def record_event(
                 user_id=user_id,
                 session_id=event_in.session_id,
                 domain=event_in.domain.lower(),
-                signal_type=event_in.signal_type,
+                signal_type=signal_type,
                 action=action,
                 risk_before=risk_before,
                 risk_after=risk_after,
@@ -80,7 +91,7 @@ async def record_event(
     await broadcast_dashboard_event({
         "event": event_in.event_type,
         "domain": event_in.domain.lower(),
-        "signal": event_in.signal_type,
+        "signal": signal_type,
         "action": action,
         "risk_before": risk_before,
         "risk_after": risk_after,
@@ -92,7 +103,7 @@ async def record_event(
         id=analytics_ev.id,
         domain=analytics_ev.domain,
         event_type=analytics_ev.event_type,
-        signal_type=event_in.signal_type,
+        signal_type=signal_type,
         action=action,
         risk_score=risk_after,
         risk_before=risk_before,
@@ -111,22 +122,25 @@ def get_recent_events(
     """Retrieves recent telemetry events stored in PostgreSQL."""
     query = db.query(AnalyticsEvent)
     if current_user:
-        query = query.filter(AnalyticsEvent.user_id == current_user.id)
+        query = apply_user_scope(query, AnalyticsEvent.user_id, current_user.id)
     
     events = query.order_by(AnalyticsEvent.timestamp.desc()).limit(limit).all()
     
     res = []
     for ev in events:
+        meta = ev.privacy_safe_metadata or {}
+        risk_after = meta.get("risk_after", ev.risk_score)
+        risk_before = meta.get("risk_before")
         res.append(TelemetryEventResponse(
             id=ev.id,
             domain=ev.domain,
             event_type=ev.event_type,
-            signal_type=ev.privacy_safe_metadata.get("signal_type") if ev.privacy_safe_metadata else None,
-            action="MASKED" if "MASK" in ev.event_type else "LOGGED",
+            signal_type=meta.get("signal_type"),
+            action=meta.get("action") or ("MASKED" if "MASK" in ev.event_type else "LOGGED"),
             risk_score=ev.risk_score,
-            risk_before=ev.risk_score * 2.5 if ev.risk_score < 40 else ev.risk_score,
-            risk_after=ev.risk_score,
-            consistency_score=98.0,
+            risk_before=risk_before,
+            risk_after=risk_after,
+            consistency_score=meta.get("consistency_score", 98.0),
             source=ev.source,
             timestamp=ev.timestamp
         ))

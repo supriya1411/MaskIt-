@@ -19,3 +19,10 @@ def test_signal_classification_levels():
         assert "reason" in conf
         assert len(conf["reason"]) > 10
         assert conf["max_impact"] > 0
+
+
+def test_canonicalize_signal_aliases():
+    assert RiskEngine.canonicalize_signal("Canvas 2D Hash") == "CANVAS"
+    assert RiskEngine.canonicalize_signal("CANVAS_HASH") == "CANVAS"
+    assert RiskEngine.canonicalize_signal("WEBGL_GPU") == "WEBGL"
+    assert RiskEngine.canonicalize_signal(None) is None

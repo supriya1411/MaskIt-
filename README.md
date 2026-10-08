@@ -116,3 +116,38 @@ The browser extension intercepts tracking scripts locally and queries the backen
    - Live WebSocket events stream in with smooth Framer Motion entrance animations.
 6. **Examine Policies & Analytics** (`/policies`, `/analytics`):
    - Inspect Recharts visualizations of real probe frequencies and configure Static, Distribution Sampled, or AI Generated noise strategies.
+
+---
+
+## 7. Cloud Deployment Guide (Vercel + Render / Railway)
+
+### Step 1: Deploy Backend on Render (Free)
+1. Go to [Render.com](https://render.com) and log in with GitHub.
+2. Click **New +** → **Web Service**.
+3. Select your repository: `https://github.com/supriya1411/MaskIt-`.
+4. Configure:
+   - **Root Directory**: `backend`
+   - **Runtime**: `Python 3`
+   - **Build Command**: `pip install -r requirements.txt && python seed_demo_data.py`
+   - **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+5. Add Environment Variables:
+   - `DATABASE_URL`: `sqlite:///./maskit_local.db`
+   - `JWT_SECRET`: `your-random-32-character-secret-key-here`
+   - `CORS_ORIGINS`: `*`
+6. Click **Deploy Web Service**.
+7. Copy your backend URL (e.g. `https://maskit-backend.onrender.com`).
+
+*(Alternative: Click **New +** → **Blueprint** and select your repo to auto-deploy using `render.yaml`)*.
+
+---
+
+### Step 2: Deploy Frontend on Vercel
+1. Go to [Vercel.com](https://vercel.com) and click **Add New Project**.
+2. Import your GitHub repository `supriya1411/MaskIt-`.
+3. Framework Preset: **Vite** (auto-detected via `vercel.json`).
+4. In **Environment Variables**, add:
+   - `VITE_API_BASE_URL`: `https://<YOUR-RENDER-BACKEND-URL>/api/v1`
+   - `VITE_WS_URL`: `wss://<YOUR-RENDER-BACKEND-URL>/ws/dashboard`
+   - `VITE_BACKEND_URL`: `https://<YOUR-RENDER-BACKEND-URL>`
+5. Click **Deploy**.
+6. Your frontend is instantly live at `https://maskit-<your-username>.vercel.app`!
